@@ -1,0 +1,29 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-surface: #0f172a;
+  --color-surface-raised: #1e293b;
+  --color-surface-input: #334155;
+  --color-accent: #38bdf8;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-slate-950 text-slate-100 antialiased;
+  /* Keep the layout clear of the iOS home indicator and notch. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+  overscroll-behavior-y: none;
+}
+
+/* Numeric entry on the gym floor: never let iOS zoom on focus. */
+input,
+select,
+textarea,
+button {
+  font-size: max(16px, 1rem);
+}
