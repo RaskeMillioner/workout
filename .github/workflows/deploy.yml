@@ -1,0 +1,76 @@
+# Build and publish the workout PWA to GitHub Pages.
+#
+# NOTE: this is a *project* site, so it is served from a subpath —
+# https://<user>.github.io/workout/ — not from the domain root. `base` in
+# vite.config.ts must stay '/workout/' (and the router basename in
+# src/main.tsx must stay '/workout') or every asset URL in the built
+# index.html will point at the domain root and the deployed app will come up
+# as a blank page with 404s for its JS and CSS. If the repository is ever
+# renamed, change all three together.
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it half-way: Pages
+# publishes as a single atomic step, and cancelling mid-flight can leave the
+# site on the previous build with no clear signal why.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Typecheck, then test, then build — in that order, and each one gates
+      # the next. A broken build must never reach the phone: the service
+      # worker caches aggressively, so a bad deploy is genuinely annoying to
+      # back out of on a device that has already installed it.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

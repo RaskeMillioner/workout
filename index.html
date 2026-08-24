@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <!-- iOS looks for /apple-touch-icon.png at the domain root, which 404s on a
+         project subpath, so point at it explicitly. Without this, "Add to Home
+         Screen" saves a screenshot of the page instead of the app icon. -->
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0"
@@ -12,6 +16,24 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Workout" />
     <title>Workout</title>
+    <script>
+      // Restores the real path after the GitHub Pages 404.html redirect
+      // (/workout/?/history -> /workout/history). Must run before the app
+      // module below, so React Router reads the corrected URL. No-op on a
+      // normal visit. See public/404.html for the other half.
+      ;(function (l) {
+        if (l.search[1] === '/') {
+          var decoded = l.search
+            .slice(1)
+            .split('&')
+            .map(function (s) {
+              return s.replace(/~and~/g, '&')
+            })
+            .join('?')
+          window.history.replaceState(null, null, l.pathname.slice(0, -1) + decoded + l.hash)
+        }
+      })(window.location)
+    </script>
   </head>
   <body>
     <div id="root"></div>
