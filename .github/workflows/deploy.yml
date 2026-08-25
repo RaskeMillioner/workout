@@ -13,6 +13,11 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+  # Validate pull requests too. Without this the checks below only run once a
+  # change is already on main, so a PR that breaks the build merges cleanly and
+  # the first symptom is the site quietly failing to update.
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -20,12 +25,14 @@ permissions:
   pages: write
   id-token: write
 
-# Let a running deploy finish rather than cancelling it half-way: Pages
-# publishes as a single atomic step, and cancelling mid-flight can leave the
-# site on the previous build with no clear signal why.
+# Pull requests get their own per-branch group so their checks never queue
+# behind a real deploy, and a superseded PR run is cancelled as soon as a new
+# commit lands. Deploys keep the single global group and are never cancelled:
+# Pages publishes as one atomic step, and killing it mid-flight leaves the site
+# on the previous build with no clear signal why.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -56,16 +63,21 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Everything below publishes, so it is skipped for pull requests: a PR is
+      # validated by the three steps above and must never reach Pages.
       - name: Configure Pages
+        if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v5
 
       - name: Upload artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
 
   deploy:
     needs: build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
