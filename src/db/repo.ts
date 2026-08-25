@@ -65,12 +65,30 @@ async function nextOrder(sessionId: string): Promise<number> {
  * The most recent completed working set for an exercise, used to prefill the
  * next one. Typing weight and reps from scratch for every set is the single
  * biggest source of friction on the gym floor.
+ *
+ * Recency is the session's start time, not the set's `updatedAt`: correcting a
+ * typo in a set from six months ago bumps its write stamp, and ordering by that
+ * would make the ancient set the template for today.
  */
 export async function lastWorkingSet(exerciseId: string): Promise<SetEntry | undefined> {
   const entries = await db.setEntries.where('exerciseId').equals(exerciseId).toArray()
-  return entries
-    .filter((e) => e.completed && e.kind !== 'warmup')
-    .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+  const working = entries.filter((e) => e.completed && e.kind !== 'warmup')
+  if (working.length === 0) return undefined
+
+  const sessionIds = [...new Set(working.map((e) => e.sessionId))]
+  const sessions = await db.sessions.bulkGet(sessionIds)
+  const startedAt = new Map<string, number>()
+  for (const session of sessions) {
+    if (session) startedAt.set(session.id, session.startedAt)
+  }
+
+  return working.sort((a, b) => {
+    // A set whose session has been deleted sorts last rather than winning by
+    // default; it is orphaned data, not a recent workout.
+    const sessionDelta = (startedAt.get(b.sessionId) ?? -Infinity) - (startedAt.get(a.sessionId) ?? -Infinity)
+    if (sessionDelta !== 0) return sessionDelta
+    return b.order - a.order
+  })[0]
 }
 
 export async function addSet(

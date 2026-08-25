@@ -124,6 +124,42 @@ describe('addSet prefill', () => {
     expect(fresh?.weightKg).toBe(92.5)
   })
 
+  it('prefers the most recent session over a recently edited old set', async () => {
+    // An old set corrected today has a newer updatedAt than anything else;
+    // recency must come from the session, not the write stamp.
+    const old = await startSession()
+    const oldSetId = await addSet(old, EX, { reps: 5, weightKg: 60 })
+    await db.setEntries.update(oldSetId, { completed: true })
+    await finishSession(old)
+    await db.sessions.update(old, { startedAt: Date.now() - 180 * 86_400_000 })
+
+    const recent = await startSession()
+    const recentSetId = await addSet(recent, EX, { reps: 5, weightKg: 100 })
+    await db.setEntries.update(recentSetId, { completed: true })
+    await finishSession(recent)
+
+    // Now edit the ancient set, giving it the newest updatedAt in the table.
+    await db.setEntries.update(oldSetId, { weightKg: 62.5, updatedAt: Date.now() + 1000 })
+
+    expect((await lastWorkingSet(EX))?.weightKg).toBe(100)
+  })
+
+  it('ignores sets whose session no longer exists', async () => {
+    const orphaned = await startSession()
+    const orphanId = await addSet(orphaned, EX, { reps: 5, weightKg: 200 })
+    await db.setEntries.update(orphanId, { completed: true })
+    await finishSession(orphaned)
+    // Delete the session row but leave the set, simulating partial cleanup.
+    await db.sessions.delete(orphaned)
+
+    const live = await startSession()
+    const liveId = await addSet(live, EX, { reps: 5, weightKg: 90 })
+    await db.setEntries.update(liveId, { completed: true })
+    await finishSession(live)
+
+    expect((await lastWorkingSet(EX))?.weightKg).toBe(90)
+  })
+
   it('never prefills from a warmup', async () => {
     await db.setEntries.add({
       id: newId(),

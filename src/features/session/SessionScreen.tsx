@@ -105,6 +105,20 @@ export default function SessionScreen({ sessionId }: { sessionId: string }) {
         const priorHistory = history.filter(
           (h) => h.exerciseId === exerciseId && !entries.some((e) => e.id === h.id),
         )
+        // Three identical sets all beat the same history, so badging every
+        // qualifying set turns a record into wallpaper. Badge one per rep
+        // count — the heaviest, earliest set — while genuinely different rep
+        // counts still each earn their own.
+        const badged = new Set<string>()
+        const bestPerReps = new Map<string, SetEntry>()
+        for (const entry of entries) {
+          if (!isPR(entry, priorHistory)) continue
+          const incumbent = bestPerReps.get(String(entry.reps))
+          if (!incumbent || entry.weightKg > incumbent.weightKg) {
+            bestPerReps.set(String(entry.reps), entry)
+          }
+        }
+        for (const entry of bestPerReps.values()) badged.add(entry.id)
         return (
           <section key={exerciseId} className="border-b border-slate-800 py-2">
             <h2 className="px-3 pb-1 text-sm font-semibold text-slate-200">
@@ -117,7 +131,7 @@ export default function SessionScreen({ sessionId }: { sessionId: string }) {
                   entry={entry}
                   index={index}
                   unit={settings.weightUnit}
-                  isPR={entry.completed && isPR(entry, priorHistory)}
+                  isPR={badged.has(entry.id)}
                   onComplete={() => timer.start(settings.defaultRestSec)}
                 />
               ))}

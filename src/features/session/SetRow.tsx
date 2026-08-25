@@ -1,5 +1,7 @@
 import type { SetEntry, WeightUnit } from '../../db/schema'
 import { deleteSet, updateSet } from '../../db/repo'
+import { useWrite } from '../../app/WriteErrorBoundary'
+import { useNumericDraft } from '../../hooks/useNumericDraft'
 import { fromDisplayWeight, toDisplayWeight } from '../../lib/units'
 
 type Props = {
@@ -20,16 +22,35 @@ const KIND_LABEL: Record<SetEntry['kind'], string> = {
 const STEP = { kg: 2.5, lb: 5 } as const
 
 export default function SetRow({ entry, index, unit, isPR, onComplete }: Props) {
+  const save = useWrite()
   const displayWeight = toDisplayWeight(entry.weightKg, unit)
   const step = STEP[unit]
 
-  const nudge = (delta: number) =>
-    updateSet(entry.id, { weightKg: fromDisplayWeight(Math.max(0, displayWeight + delta), unit) })
+  const weightField = useNumericDraft({
+    value: displayWeight,
+    decimals: 1,
+    onCommit: (next) =>
+      save(updateSet(entry.id, { weightKg: fromDisplayWeight(next, unit) }), 'updating the weight'),
+  })
+  const repsField = useNumericDraft({
+    value: entry.reps,
+    decimals: 0,
+    integer: true,
+    onCommit: (next) => save(updateSet(entry.id, { reps: next }), 'updating the reps'),
+  })
+
+  const nudge = (delta: number) => {
+    weightField.reset()
+    save(
+      updateSet(entry.id, { weightKg: fromDisplayWeight(Math.max(0, displayWeight + delta), unit) }),
+      'updating the weight',
+    )
+  }
 
   const cycleKind = () => {
     const order: SetEntry['kind'][] = ['working', 'warmup', 'dropset']
     const next = order[(order.indexOf(entry.kind) + 1) % order.length] ?? 'working'
-    updateSet(entry.id, { kind: next })
+    save(updateSet(entry.id, { kind: next }), 'changing the set type')
   }
 
   return (
@@ -61,17 +82,14 @@ export default function SetRow({ entry, index, unit, isPR, onComplete }: Props) 
           −
         </button>
         <input
+          ref={weightField.ref}
           inputMode="decimal"
           aria-label={`Set ${index + 1} weight`}
           className="w-16 rounded bg-slate-800 py-1.5 text-center tabular-nums outline-none focus:ring-1 focus:ring-sky-500"
-          value={String(Number(displayWeight.toFixed(1)))}
-          onFocus={(event) => event.target.select()}
-          onChange={(event) => {
-            const next = Number(event.target.value.replace(',', '.'))
-            if (Number.isFinite(next)) {
-              updateSet(entry.id, { weightKg: fromDisplayWeight(Math.max(0, next), unit) })
-            }
-          }}
+          value={weightField.value}
+          onChange={weightField.onChange}
+          onFocus={weightField.onFocus}
+          onBlur={weightField.onBlur}
         />
         <button
           type="button"
@@ -85,15 +103,14 @@ export default function SetRow({ entry, index, unit, isPR, onComplete }: Props) 
         <span className="px-1 text-xs text-slate-600">×</span>
 
         <input
+          ref={repsField.ref}
           inputMode="numeric"
           aria-label={`Set ${index + 1} reps`}
           className="w-12 rounded bg-slate-800 py-1.5 text-center tabular-nums outline-none focus:ring-1 focus:ring-sky-500"
-          value={String(entry.reps)}
-          onFocus={(event) => event.target.select()}
-          onChange={(event) => {
-            const next = Number(event.target.value)
-            if (Number.isFinite(next)) updateSet(entry.id, { reps: Math.max(0, Math.round(next)) })
-          }}
+          value={repsField.value}
+          onChange={repsField.onChange}
+          onFocus={repsField.onFocus}
+          onBlur={repsField.onBlur}
         />
       </span>
 
@@ -112,7 +129,7 @@ export default function SetRow({ entry, index, unit, isPR, onComplete }: Props) 
         aria-pressed={entry.completed}
         onClick={() => {
           const next = !entry.completed
-          updateSet(entry.id, { completed: next })
+          save(updateSet(entry.id, { completed: next }), 'completing the set')
           // Rest starts when a set is finished, not when it is un-finished.
           if (next) onComplete()
         }}
@@ -127,7 +144,7 @@ export default function SetRow({ entry, index, unit, isPR, onComplete }: Props) 
         type="button"
         aria-label={`Delete set ${index + 1}`}
         className="h-9 w-7 shrink-0 text-slate-600 active:text-red-400"
-        onClick={() => deleteSet(entry.id)}
+        onClick={() => save(deleteSet(entry.id), 'deleting the set')}
       >
         ×
       </button>

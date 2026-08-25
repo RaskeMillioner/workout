@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { db } from './db/schema'
 import { seedDatabase } from './db/seed'
 import { SettingsProvider } from './app/SettingsProvider'
+import { WriteErrorProvider } from './app/WriteErrorBoundary'
 import AppLayout from './components/AppLayout'
 import TodayScreen from './features/session/TodayScreen'
 import HistoryScreen from './features/history/HistoryScreen'
@@ -38,15 +39,17 @@ export default function App() {
 
   return (
     <SettingsProvider>
-      <Routes>
-        <Route element={<AppLayout />}>
-          <Route index element={<TodayScreen />} />
-          <Route path="history" element={<HistoryScreen />} />
-          <Route path="exercises" element={<ExercisesScreen />} />
-          <Route path="settings" element={<SettingsScreen />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
+      <WriteErrorProvider>
+        <Routes>
+          <Route element={<AppLayout />}>
+            <Route index element={<TodayScreen />} />
+            <Route path="history" element={<HistoryScreen />} />
+            <Route path="exercises" element={<ExercisesScreen />} />
+            <Route path="settings" element={<SettingsScreen />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+      </WriteErrorProvider>
     </SettingsProvider>
   )
 }
