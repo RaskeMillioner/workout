@@ -1,3 +1,5 @@
+import { useNumericDraft } from '../hooks/useNumericDraft'
+
 type Props = {
   label: string
   value: number
@@ -13,6 +15,9 @@ type Props = {
  * Numeric entry with tap targets either side. Typing a weight on a phone
  * keyboard mid-set is slow and error-prone, so the steppers are the primary
  * control and the input is the escape hatch.
+ *
+ * While the field has focus the raw text is authoritative, not the parsed
+ * number — see useNumericDraft for why.
  */
 export default function NumberField({
   label,
@@ -23,8 +28,13 @@ export default function NumberField({
   suffix,
   decimals = 1,
 }: Props) {
+  const field = useNumericDraft({ value, onCommit: onChange, decimals, min })
+
   const clamp = (next: number) => Math.max(min, Number(next.toFixed(decimals)))
-  const display = Number.isFinite(value) ? String(Number(value.toFixed(decimals))) : ''
+  const nudge = (delta: number) => {
+    field.reset()
+    onChange(clamp(value + delta))
+  }
 
   return (
     <label className="flex flex-col gap-1">
@@ -34,21 +44,20 @@ export default function NumberField({
           type="button"
           aria-label={`Decrease ${label}`}
           className="w-11 shrink-0 text-lg text-slate-300 active:bg-slate-700"
-          onClick={() => onChange(clamp(value - step))}
+          onClick={() => nudge(-step)}
         >
           −
         </button>
         <input
+          ref={field.ref}
           className="min-w-0 flex-1 bg-transparent py-2.5 text-center tabular-nums outline-none"
           // "decimal" gives the numeric pad while still allowing 82.5.
           inputMode="decimal"
-          value={display}
           aria-label={label}
-          onChange={(event) => {
-            const next = Number(event.target.value.replace(',', '.'))
-            if (Number.isFinite(next)) onChange(Math.max(min, next))
-          }}
-          onFocus={(event) => event.target.select()}
+          value={field.value}
+          onChange={field.onChange}
+          onFocus={field.onFocus}
+          onBlur={field.onBlur}
         />
         {suffix ? (
           <span className="self-center pr-1 text-xs text-slate-500">{suffix}</span>
@@ -57,7 +66,7 @@ export default function NumberField({
           type="button"
           aria-label={`Increase ${label}`}
           className="w-11 shrink-0 text-lg text-slate-300 active:bg-slate-700"
-          onClick={() => onChange(clamp(value + step))}
+          onClick={() => nudge(step)}
         >
           +
         </button>
