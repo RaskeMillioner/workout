@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db, newId, now } from '../../db/schema'
+import { WriteErrorProvider } from '../../app/WriteErrorBoundary'
 import SetRow from './SetRow'
 
 const SESSION = 'session-1'
@@ -37,7 +38,11 @@ afterEach(async () => {
 function Harness() {
   const entry = useLiveQuery(() => db.setEntries.get(setId), [])
   if (!entry) return null
-  return <SetRow entry={entry} index={0} unit="kg" isPR={false} onComplete={() => {}} />
+  return (
+    <WriteErrorProvider>
+      <SetRow entry={entry} index={0} unit="kg" isPR={false} onComplete={() => {}} />
+    </WriteErrorProvider>
+  )
 }
 
 describe('SetRow numeric entry', () => {
@@ -96,7 +101,15 @@ describe('SetRow numeric entry', () => {
     let completed = 0
     const entry = await db.setEntries.get(setId)
     render(
-      <SetRow entry={entry!} index={0} unit="kg" isPR={false} onComplete={() => (completed += 1)} />,
+      <WriteErrorProvider>
+        <SetRow
+          entry={entry!}
+          index={0}
+          unit="kg"
+          isPR={false}
+          onComplete={() => (completed += 1)}
+        />
+      </WriteErrorProvider>,
     )
 
     await user.click(screen.getByLabelText('Complete set 1'))
