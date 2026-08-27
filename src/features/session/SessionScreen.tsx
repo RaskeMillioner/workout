@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import type { Exercise, SetEntry } from '../../db/schema'
 import { db } from '../../db/schema'
 import { addCardio, addSet, deleteSession, finishSession } from '../../db/repo'
-import { isPR, sessionVolume } from '../../lib/records'
+import { isPR, sessionVolume, suggestNextTarget } from '../../lib/records'
 import { formatWeight } from '../../lib/units'
 import { useSettings } from '../../app/SettingsProvider'
 import { useRestTimer } from '../../hooks/useRestTimer'
@@ -35,6 +35,21 @@ export default function SessionScreen({ sessionId }: { sessionId: string }) {
   // All-time history, so a PR badge means an actual lifetime best rather than
   // "best today".
   const history = useLiveQuery(() => db.setEntries.toArray(), [], [] as SetEntry[])
+
+  // The routine this session was started from, if any — used only to show a
+  // "target" line next to whichever exercises it prescribes. A routine is a
+  // suggestion, never a constraint: sessions with no routineId (or exercises
+  // the routine didn't mention) simply show no target line.
+  const session = useLiveQuery(() => db.sessions.get(sessionId), [sessionId])
+  const routineId = session?.routineId
+  const routine = useLiveQuery(
+    () => (routineId ? db.routines.get(routineId) : undefined),
+    [routineId],
+  )
+  const blockByExercise = useMemo(
+    () => new Map((routine?.blocks ?? []).map((block) => [block.exerciseId, block])),
+    [routine],
+  )
 
   const byId = useMemo(
     () => new Map(exercises.map((ex: Exercise) => [ex.id, ex])),
@@ -119,11 +134,25 @@ export default function SessionScreen({ sessionId }: { sessionId: string }) {
           }
         }
         for (const entry of bestPerReps.values()) badged.add(entry.id)
+
+        // Target shown reflects what was recommended before today's sets
+        // were logged, so it doesn't drift as sets get checked off mid-session.
+        const block = blockByExercise.get(exerciseId)
+        const targetLabel = ((): string | undefined => {
+          if (!block) return undefined
+          const target = suggestNextTarget(block, priorHistory)
+          const weight = target.weightKg > 0 ? ` @ ${formatWeight(target.weightKg, settings.weightUnit)}` : ''
+          return `target ${block.targetSets} × ${target.reps}${weight}`
+        })()
+
         return (
           <section key={exerciseId} className="border-b border-slate-800 py-2">
             <h2 className="px-3 pb-1 text-sm font-semibold text-slate-200">
               {exercise?.name ?? 'Unknown exercise'}
             </h2>
+            {targetLabel ? (
+              <p className="px-3 pb-1 text-xs text-slate-500">{targetLabel}</p>
+            ) : null}
             <ul>
               {entries.map((entry, index) => (
                 <SetRow
