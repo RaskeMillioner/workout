@@ -149,6 +149,8 @@ export interface Settings {
   defaultRestSec: number
   theme: Theme
   lastExportAt?: number
+  /** The program currently being followed, if any. Drives which routine comes next. */
+  activeProgramId?: string
   updatedAt: number
 }
 
