@@ -179,6 +179,29 @@ describe('importBackup', () => {
     expect(after.settings).toEqual(before.settings)
   })
 
+  it('round-trips a favourited exercise through export and import', async () => {
+    await importBackup(db, validBackup({
+      exercises: [
+        {
+          id: 'ex-1',
+          name: 'Kettlebell Goblet Squat',
+          modality: 'strength',
+          muscleGroups: ['quads', 'glutes'],
+          equipment: 'kettlebell',
+          isCustom: false,
+          isFavourite: true,
+          updatedAt: 1,
+        },
+      ],
+    }))
+
+    const exported = await exportBackup(db)
+    expect(exported.exercises[0]?.isFavourite).toBe(true)
+
+    await importBackup(db, JSON.parse(JSON.stringify(exported)))
+    expect((await db.exercises.get('ex-1'))?.isFavourite).toBe(true)
+  })
+
   it('indexes imported rows so exercise history queries still work', async () => {
     await importBackup(db, validBackup())
     const bySession = await db.setEntries
@@ -284,6 +307,18 @@ describe('importBackup validation', () => {
       validBackup({ sessions: [{ id: 's', date: '24/08/2026', startedAt: 1, updatedAt: 1 }] }),
       /sessions\[0\]\.date must be an ISO yyyy-mm-dd date/,
     )
+  })
+
+  it('rejects a non-boolean isFavourite', async () => {
+    const payload = validBackup()
+    payload.exercises[0].isFavourite = 'yes' as unknown as boolean
+    await expectRejection(payload, /exercises\[0\]\.isFavourite must be a boolean, got "yes"/)
+  })
+
+  it('rejects a non-number settings.seedVersion', async () => {
+    const payload = validBackup()
+    payload.settings[0].seedVersion = 'two' as unknown as number
+    await expectRejection(payload, /settings\[0\]\.seedVersion must be a finite number, got "two"/)
   })
 
   it('rejects an unknown muscle group', async () => {

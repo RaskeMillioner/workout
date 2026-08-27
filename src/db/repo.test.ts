@@ -13,6 +13,7 @@ import {
   finishSession,
   getActiveSession,
   lastWorkingSet,
+  setExerciseFavourite,
   startSession,
   todayISO,
   updateProgram,
@@ -197,6 +198,33 @@ describe('addSet prefill', () => {
     await addCardio(id, EX, { durationSec: 900 })
     const setId = await addSet(id, EX)
     expect((await db.setEntries.get(setId))?.order).toBe(1)
+  })
+})
+
+describe('setExerciseFavourite', () => {
+  it('toggles favourite status in both directions and stamps updatedAt', async () => {
+    await db.exercises.add({
+      id: EX,
+      name: 'Kettlebell Goblet Squat',
+      modality: 'strength',
+      muscleGroups: ['quads'],
+      equipment: 'kettlebell',
+      isCustom: false,
+      updatedAt: 1,
+    })
+
+    await setExerciseFavourite(EX, true)
+    let exercise = await db.exercises.get(EX)
+    expect(exercise?.isFavourite).toBe(true)
+    expect(exercise!.updatedAt).toBeGreaterThan(1)
+
+    const afterFirstStamp = exercise!.updatedAt
+    await new Promise((resolve) => setTimeout(resolve, 2))
+
+    await setExerciseFavourite(EX, false)
+    exercise = await db.exercises.get(EX)
+    expect(exercise?.isFavourite).toBe(false)
+    expect(exercise!.updatedAt).toBeGreaterThan(afterFirstStamp)
   })
 })
 
