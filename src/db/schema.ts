@@ -131,6 +131,14 @@ export interface BodyMetric {
   updatedAt: number
 }
 
+export interface Program {
+  id: string
+  name: string
+  /** Ordered rotation: the next session is the one after whatever you last did. */
+  routineIds: string[]
+  updatedAt: number
+}
+
 export const SETTINGS_ID = 'singleton'
 
 export interface Settings {
@@ -141,6 +149,8 @@ export interface Settings {
   defaultRestSec: number
   theme: Theme
   lastExportAt?: number
+  /** The program currently being followed, if any. Drives which routine comes next. */
+  activeProgramId?: string
   updatedAt: number
 }
 
@@ -167,6 +177,7 @@ export class WorkoutDB extends Dexie {
   routines!: EntityTable<Routine, 'id'>
   bodyMetrics!: EntityTable<BodyMetric, 'id'>
   settings!: EntityTable<Settings, 'id'>
+  programs!: EntityTable<Program, 'id'>
 
   constructor(name = 'workout') {
     super(name)
@@ -184,6 +195,9 @@ export class WorkoutDB extends Dexie {
       bodyMetrics: 'id, date, updatedAt',
       settings: 'id, updatedAt',
     })
+    this.version(2).stores({
+      programs: 'id, name, updatedAt',
+    })
   }
 }
 
@@ -196,6 +210,7 @@ export const TABLE_NAMES = [
   'routines',
   'bodyMetrics',
   'settings',
+  'programs',
 ] as const
 
 export type TableName = (typeof TABLE_NAMES)[number]

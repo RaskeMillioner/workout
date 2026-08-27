@@ -1,15 +1,22 @@
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { db, newId, now } from './schema'
+import type { RoutineBlock } from './schema'
+import { SETTINGS_ID, db, newId, now } from './schema'
 import {
   addCardio,
   addSet,
+  createProgram,
+  createRoutine,
+  deleteProgram,
+  deleteRoutine,
   deleteSession,
   finishSession,
   getActiveSession,
   lastWorkingSet,
   startSession,
   todayISO,
+  updateProgram,
+  updateRoutine,
 } from './repo'
 
 beforeEach(async () => {
@@ -18,11 +25,21 @@ beforeEach(async () => {
     db.setEntries.clear(),
     db.cardioEntries.clear(),
     db.exercises.clear(),
+    db.routines.clear(),
+    db.programs.clear(),
+    db.settings.clear(),
   ])
 })
 
 afterEach(async () => {
-  await Promise.all([db.sessions.clear(), db.setEntries.clear(), db.cardioEntries.clear()])
+  await Promise.all([
+    db.sessions.clear(),
+    db.setEntries.clear(),
+    db.cardioEntries.clear(),
+    db.routines.clear(),
+    db.programs.clear(),
+    db.settings.clear(),
+  ])
 })
 
 const EX = 'exercise-1'
@@ -180,5 +197,141 @@ describe('addSet prefill', () => {
     await addCardio(id, EX, { durationSec: 900 })
     const setId = await addSet(id, EX)
     expect((await db.setEntries.get(setId))?.order).toBe(1)
+  })
+})
+
+const BLOCK: RoutineBlock = {
+  exerciseId: EX,
+  targetSets: 3,
+  repRangeLow: 8,
+  repRangeHigh: 12,
+  progression: 'double-progression',
+}
+
+describe('routine CRUD', () => {
+  it('creates a routine with its blocks', async () => {
+    const id = await createRoutine('Push Day', [BLOCK])
+    const routine = await db.routines.get(id)
+    expect(routine?.name).toBe('Push Day')
+    expect(routine?.blocks).toEqual([BLOCK])
+  })
+
+  it('defaults to an empty block list', async () => {
+    const id = await createRoutine('Empty')
+    expect((await db.routines.get(id))?.blocks).toEqual([])
+  })
+
+  it('updates a routine and stamps updatedAt', async () => {
+    const id = await createRoutine('Push Day')
+    const before = (await db.routines.get(id))!.updatedAt
+    await new Promise((resolve) => setTimeout(resolve, 2))
+
+    await updateRoutine(id, { name: 'Push Day A' })
+
+    const after = await db.routines.get(id)
+    expect(after?.name).toBe('Push Day A')
+    expect(after!.updatedAt).toBeGreaterThan(before)
+  })
+
+  it('deletes a routine', async () => {
+    const id = await createRoutine('Temp')
+    await deleteRoutine(id)
+    expect(await db.routines.get(id)).toBeUndefined()
+  })
+
+  it('deleting a routine strips its id from every program that referenced it', async () => {
+    const routineA = await createRoutine('A')
+    const routineB = await createRoutine('B')
+    const programId = await createProgram('A/B', [routineA, routineB])
+
+    await deleteRoutine(routineA)
+
+    expect((await db.programs.get(programId))?.routineIds).toEqual([routineB])
+  })
+
+  it('leaves programs that never referenced the deleted routine untouched', async () => {
+    const routineA = await createRoutine('A')
+    const routineB = await createRoutine('B')
+    const programId = await createProgram('B only', [routineB])
+
+    await deleteRoutine(routineA)
+
+    expect((await db.programs.get(programId))?.routineIds).toEqual([routineB])
+  })
+})
+
+describe('program CRUD', () => {
+  it('creates a program with its routine ids', async () => {
+    const routineId = await createRoutine('A')
+    const id = await createProgram('Rotation', [routineId])
+    expect((await db.programs.get(id))?.routineIds).toEqual([routineId])
+  })
+
+  it('defaults to an empty rotation', async () => {
+    const id = await createProgram('Empty')
+    expect((await db.programs.get(id))?.routineIds).toEqual([])
+  })
+
+  it('updates a program', async () => {
+    const id = await createProgram('Rotation')
+    await updateProgram(id, { name: 'New Name' })
+    expect((await db.programs.get(id))?.name).toBe('New Name')
+  })
+
+  it('deletes a program', async () => {
+    const id = await createProgram('Temp')
+    await deleteProgram(id)
+    expect(await db.programs.get(id)).toBeUndefined()
+  })
+
+  it('deleting the active program clears settings.activeProgramId', async () => {
+    const id = await createProgram('Active')
+    await db.settings.put({
+      id: SETTINGS_ID,
+      weightUnit: 'kg',
+      distanceUnit: 'km',
+      defaultRestSec: 90,
+      theme: 'system',
+      activeProgramId: id,
+      updatedAt: now(),
+    })
+
+    await deleteProgram(id)
+
+    expect((await db.settings.get(SETTINGS_ID))?.activeProgramId).toBeUndefined()
+  })
+
+  it('deleting a non-active program leaves settings.activeProgramId untouched', async () => {
+    const activeId = await createProgram('Active')
+    const otherId = await createProgram('Other')
+    await db.settings.put({
+      id: SETTINGS_ID,
+      weightUnit: 'kg',
+      distanceUnit: 'km',
+      defaultRestSec: 90,
+      theme: 'system',
+      activeProgramId: activeId,
+      updatedAt: now(),
+    })
+
+    await deleteProgram(otherId)
+
+    expect((await db.settings.get(SETTINGS_ID))?.activeProgramId).toBe(activeId)
+  })
+
+  it('deleting a program is a no-op on settings when none is active', async () => {
+    const id = await createProgram('Temp')
+    await db.settings.put({
+      id: SETTINGS_ID,
+      weightUnit: 'kg',
+      distanceUnit: 'km',
+      defaultRestSec: 90,
+      theme: 'system',
+      updatedAt: now(),
+    })
+
+    await deleteProgram(id)
+
+    expect((await db.settings.get(SETTINGS_ID))?.activeProgramId).toBeUndefined()
   })
 })

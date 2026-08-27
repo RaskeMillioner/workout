@@ -93,6 +93,14 @@ function validBackup(overrides: Partial<BackupFile> = {}): BackupFile {
         updatedAt: 1,
       },
     ],
+    programs: [
+      {
+        id: 'prog-1',
+        name: 'Push Pull Legs',
+        routineIds: ['rou-1'],
+        updatedAt: 1,
+      },
+    ],
     ...overrides,
   }
 }
@@ -107,6 +115,7 @@ describe('exportBackup', () => {
     expect(backup.exercises.length).toBeGreaterThan(50)
     expect(backup.settings).toHaveLength(1)
     expect(backup.sessions).toEqual([])
+    expect(backup.programs).toEqual([])
   })
 
   it('produces something JSON round-trippable that re-validates', async () => {
@@ -129,6 +138,7 @@ describe('importBackup', () => {
       routines: 1,
       bodyMetrics: 1,
       settings: 1,
+      programs: 1,
     })
     expect(await db.exercises.count()).toBe(1)
     const routine = await db.routines.get('rou-1')
@@ -177,6 +187,20 @@ describe('importBackup', () => {
       .toArray()
     expect(bySession).toHaveLength(1)
   })
+
+  it('preserves row counts across a full round trip, including programs', async () => {
+    const { imported: firstImport } = await importBackup(db, validBackup())
+    expect(firstImport.programs).toBe(1)
+    expect(await db.programs.count()).toBe(1)
+
+    const exported = await exportBackup(db)
+    const { imported: secondImport } = await importBackup(db, JSON.parse(JSON.stringify(exported)))
+
+    expect(secondImport).toEqual(firstImport)
+    expect(await db.programs.count()).toBe(1)
+    const program = await db.programs.get('prog-1')
+    expect(program?.routineIds).toEqual(['rou-1'])
+  })
 })
 
 describe('importBackup validation', () => {
@@ -206,6 +230,35 @@ describe('importBackup validation', () => {
     const payload = validBackup() as unknown as Record<string, unknown>
     delete payload.routines
     await expectRejection(payload, /backup\.routines must be an array/)
+  })
+
+  it('treats a schemaVersion 1 backup with no programs key as having an empty programs table', async () => {
+    const payload = validBackup({ schemaVersion: 1 }) as unknown as Record<string, unknown>
+    delete payload.programs
+    const { imported } = await importBackup(db, payload)
+    expect(imported.programs).toBe(0)
+    expect(await db.programs.count()).toBe(0)
+  })
+
+  it('rejects a schemaVersion 2 backup with no programs key', async () => {
+    const payload = validBackup() as unknown as Record<string, unknown>
+    delete payload.programs
+    await expectRejection(payload, /backup\.programs must be an array/)
+  })
+
+  it('still rejects a schemaVersion 1 backup missing a table that existed in v1', async () => {
+    const payload = validBackup({ schemaVersion: 1 }) as unknown as Record<string, unknown>
+    delete payload.programs
+    delete payload.sessions
+    await expectRejection(payload, /backup\.sessions must be an array/)
+  })
+
+  it('still validates rows in a schemaVersion 1 backup', async () => {
+    const payload = validBackup({ schemaVersion: 1 }) as unknown as Record<string, unknown>
+    delete payload.programs
+    const setEntries = payload.setEntries as Record<string, unknown>[]
+    setEntries[0].reps = 'five'
+    await expectRejection(payload, /setEntries\[0\]\.reps must be a finite number, got "five"/)
   })
 
   it('names the offending row and field', async () => {
@@ -262,6 +315,18 @@ describe('importBackup validation', () => {
     const payload = validBackup()
     payload.routines[0].blocks[0].progression = 'magic' as never
     await expectRejection(payload, /routines\[0\]\.blocks\[0\]\.progression must be one of/)
+  })
+
+  it('rejects a programs row with a non-array routineIds', async () => {
+    const payload = validBackup()
+    payload.programs[0].routineIds = 'rou-1' as unknown as string[]
+    await expectRejection(payload, /programs\[0\]\.routineIds must be an array of strings/)
+  })
+
+  it('rejects a programs row with a non-string entry in routineIds', async () => {
+    const payload = validBackup()
+    payload.programs[0].routineIds = [42 as unknown as string]
+    await expectRejection(payload, /programs\[0\]\.routineIds must be an array of strings/)
   })
 
   it('leaves the database untouched when validation fails', async () => {
