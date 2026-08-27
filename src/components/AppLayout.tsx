@@ -5,6 +5,7 @@ type Tab = { to: string; label: string; icon: string }
 const TABS: Tab[] = [
   { to: '/', label: 'Today', icon: '🏋️' },
   { to: '/history', label: 'History', icon: '📅' },
+  { to: '/plan', label: 'Plan', icon: '📋' },
   { to: '/exercises', label: 'Exercises', icon: '📖' },
   { to: '/settings', label: 'Settings', icon: '⚙️' },
 ]

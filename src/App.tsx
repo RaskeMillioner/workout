@@ -9,6 +9,9 @@ import TodayScreen from './features/session/TodayScreen'
 import HistoryScreen from './features/history/HistoryScreen'
 import ExercisesScreen from './features/exercises/ExercisesScreen'
 import SettingsScreen from './features/settings/SettingsScreen'
+import RoutinesScreen from './features/routines/RoutinesScreen'
+import RoutineEditor from './features/routines/RoutineEditor'
+import ProgramEditor from './features/routines/ProgramEditor'
 
 export default function App() {
   const [ready, setReady] = useState(false)
@@ -44,6 +47,9 @@ export default function App() {
           <Route element={<AppLayout />}>
             <Route index element={<TodayScreen />} />
             <Route path="history" element={<HistoryScreen />} />
+            <Route path="plan" element={<RoutinesScreen />} />
+            <Route path="plan/routines/:routineId" element={<RoutineEditor />} />
+            <Route path="plan/programs/:programId" element={<ProgramEditor />} />
             <Route path="exercises" element={<ExercisesScreen />} />
             <Route path="settings" element={<SettingsScreen />} />
             <Route path="*" element={<Navigate to="/" replace />} />
