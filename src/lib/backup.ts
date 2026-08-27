@@ -2,6 +2,7 @@ import type {
   BodyMetric,
   CardioEntry,
   Exercise,
+  Program,
   Routine,
   Session,
   SetEntry,
@@ -19,7 +20,7 @@ import { MUSCLE_GROUPS, SETTINGS_ID, TABLE_NAMES } from '../db/schema'
  */
 
 /** Bump alongside a `db.version(n)` bump that changes the exported shape. */
-export const BACKUP_SCHEMA_VERSION = 1
+export const BACKUP_SCHEMA_VERSION = 2
 
 export interface BackupFile {
   schemaVersion: number
@@ -31,6 +32,7 @@ export interface BackupFile {
   routines: Routine[]
   bodyMetrics: BodyMetric[]
   settings: Settings[]
+  programs: Program[]
 }
 
 export class BackupValidationError extends Error {
@@ -226,7 +228,32 @@ const ROW_VALIDATORS: Record<TableName, RowValidator> = {
     requireEnum(row, table, index, 'theme', ['dark', 'light', 'system'])
     optional(row, 'lastExportAt', () => requireNumber(row, table, index, 'lastExportAt'))
   },
+
+  programs: (row, table, index) => {
+    validateCommon(row, table, index)
+    requireString(row, table, index, 'name')
+    const routineIds = row.routineIds
+    if (!Array.isArray(routineIds)) {
+      fail(`${where(table, index, 'routineIds')} must be an array of strings, got ${describe(routineIds)}`)
+      return
+    }
+    for (const routineId of routineIds) {
+      if (typeof routineId !== 'string' || routineId.length === 0) {
+        fail(
+          `${where(table, index, 'routineIds')} must be an array of strings, got ${describe(routineId)}`,
+        )
+      }
+    }
+  },
 }
+
+/**
+ * The backup schemaVersion in which each table first appeared. A table is only
+ * required in files at or above its introducing version; older files predate it
+ * and are treated as empty rather than rejected, so backups exported before the
+ * table existed stay restorable.
+ */
+const TABLES_ADDED_IN: Partial<Record<TableName, number>> = { programs: 2 }
 
 /**
  * Full structural validation of an untrusted backup payload. Throws a
@@ -252,8 +279,18 @@ export function validateBackup(data: unknown): BackupFile {
     fail(`backup.exportedAt must be a timestamp in epoch ms, got ${describe(file.exportedAt)}`)
   }
 
+  const fileVersion = file.schemaVersion as number
+  const normalised: Row = { ...file }
+
   for (const table of TABLE_NAMES) {
     const rows = file[table]
+    const addedIn = TABLES_ADDED_IN[table] ?? 1
+    if (rows === undefined && fileVersion < addedIn) {
+      // This table didn't exist yet when the file was exported — treat it as
+      // empty rather than rejecting a backup that predates the table.
+      normalised[table] = []
+      continue
+    }
     if (!Array.isArray(rows)) {
       fail(`backup.${table} must be an array, got ${describe(rows)}`)
       continue
@@ -270,19 +307,20 @@ export function validateBackup(data: unknown): BackupFile {
       if (seenIds.has(id)) fail(`${table} contains duplicate id ${JSON.stringify(id)}`)
       seenIds.add(id)
     })
+    normalised[table] = rows
   }
 
-  const settingsRows = file.settings as unknown[]
+  const settingsRows = normalised.settings as unknown[]
   if (settingsRows.length > 1) {
     fail(`backup.settings must hold at most one row, got ${settingsRows.length}`)
   }
 
-  return file as unknown as BackupFile
+  return normalised as unknown as BackupFile
 }
 
 /** Snapshot every table into a plain JSON-serialisable object. */
 export async function exportBackup(database: WorkoutDB): Promise<BackupFile> {
-  const [exercises, sessions, setEntries, cardioEntries, routines, bodyMetrics, settings] =
+  const [exercises, sessions, setEntries, cardioEntries, routines, bodyMetrics, settings, programs] =
     await database.transaction('r', database.tables, () =>
       Promise.all([
         database.exercises.toArray(),
@@ -292,6 +330,7 @@ export async function exportBackup(database: WorkoutDB): Promise<BackupFile> {
         database.routines.toArray(),
         database.bodyMetrics.toArray(),
         database.settings.toArray(),
+        database.programs.toArray(),
       ]),
     )
 
@@ -305,6 +344,7 @@ export async function exportBackup(database: WorkoutDB): Promise<BackupFile> {
     routines,
     bodyMetrics,
     settings,
+    programs,
   }
 }
 
