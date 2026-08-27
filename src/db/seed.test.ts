@@ -87,6 +87,17 @@ describe('seedDatabase', () => {
     expect(settings?.theme).toBe('light')
   })
 
+  it('does not duplicate the catalogue when two seeds race each other', async () => {
+    // StrictMode double-invokes the effect in development, and two open tabs do
+    // the same in production. Without a transaction around the read and the
+    // write, both callers see an empty table and both insert everything.
+    await Promise.all([seedDatabase(db), seedDatabase(db)])
+
+    const rows = await db.exercises.toArray()
+    expect(rows).toHaveLength(SEED_EXERCISES.length)
+    expect(new Set(rows.map((r) => r.name)).size).toBe(rows.length)
+  })
+
   it('gives every seeded row a uuid and a timestamp', async () => {
     await seedDatabase(db)
     const rows = await db.exercises.toArray()

@@ -1,15 +1,30 @@
 import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import type { Exercise, SetEntry } from '../../db/schema'
-import { db } from '../../db/schema'
+import type { Exercise, MuscleGroup, SetEntry } from '../../db/schema'
+import { db, MUSCLE_GROUPS } from '../../db/schema'
+import { setExerciseFavourite } from '../../db/repo'
 import { bestSetByEstimated1RM, detectPRs, estimate1RM } from '../../lib/records'
 import { formatWeight } from '../../lib/units'
 import { useSettings } from '../../app/SettingsProvider'
+import { useWrite } from '../../app/WriteErrorBoundary'
+import Chip from '../../components/Chip'
+import { filterExercises } from './filterExercises'
+
+function toggled<T>(set: Set<T>, value: T): Set<T> {
+  const next = new Set(set)
+  if (next.has(value)) next.delete(value)
+  else next.add(value)
+  return next
+}
 
 export default function ExercisesScreen() {
   const settings = useSettings()
+  const save = useWrite()
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
+  const [favouritesOnly, setFavouritesOnly] = useState(false)
+  const [equipmentFilter, setEquipmentFilter] = useState<Set<string>>(new Set())
+  const [muscleFilter, setMuscleFilter] = useState<Set<MuscleGroup>>(new Set())
 
   const exercises = useLiveQuery(() => db.exercises.orderBy('name').toArray(), [], [])
   const allSets = useLiveQuery(() => db.setEntries.toArray(), [], [] as SetEntry[])
@@ -22,15 +37,31 @@ export default function ExercisesScreen() {
     return counts
   }, [allSets])
 
-  const matches = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    if (!needle) return exercises
-    return exercises.filter(
-      (ex: Exercise) =>
-        ex.name.toLowerCase().includes(needle) ||
-        ex.muscleGroups.some((group) => group.includes(needle)),
-    )
-  }, [exercises, query])
+  const equipmentOptions = useMemo(
+    () => [...new Set(exercises.map((ex) => ex.equipment))].sort(),
+    [exercises],
+  )
+
+  const matches = useMemo(
+    () =>
+      filterExercises(exercises, {
+        query,
+        favouritesOnly,
+        equipment: [...equipmentFilter],
+        muscleGroups: [...muscleFilter],
+      }),
+    [exercises, query, favouritesOnly, equipmentFilter, muscleFilter],
+  )
+
+  const anyFilterActive =
+    favouritesOnly || equipmentFilter.size > 0 || muscleFilter.size > 0 || query.trim().length > 0
+
+  function clearFilters() {
+    setQuery('')
+    setFavouritesOnly(false)
+    setEquipmentFilter(new Set())
+    setMuscleFilter(new Set())
+  }
 
   const detail = selected ? exercises.find((ex: Exercise) => ex.id === selected) : null
   const detailSets = selected ? allSets.filter((s) => s.exerciseId === selected) : []
@@ -48,24 +79,100 @@ export default function ExercisesScreen() {
         onChange={(event) => setQuery(event.target.value)}
       />
 
-      <ul className="mt-3 divide-y divide-slate-800">
+      <div className="mt-3 space-y-3">
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          <Chip
+            label="★ Favourites"
+            active={favouritesOnly}
+            onClick={() => setFavouritesOnly((value) => !value)}
+          />
+        </div>
+
+        <div>
+          <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+            Equipment
+          </p>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {equipmentOptions.map((equipment) => (
+              <Chip
+                key={equipment}
+                label={equipment}
+                active={equipmentFilter.has(equipment)}
+                onClick={() => setEquipmentFilter((prev) => toggled(prev, equipment))}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+            Muscle group
+          </p>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {MUSCLE_GROUPS.map((group) => (
+              <Chip
+                key={group}
+                label={group}
+                active={muscleFilter.has(group)}
+                onClick={() => setMuscleFilter((prev) => toggled(prev, group))}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+        <span className="tabular-nums">
+          {matches.length} of {exercises.length}
+        </span>
+        {anyFilterActive ? (
+          <button
+            type="button"
+            className="min-h-9 px-2 font-medium text-sky-400"
+            onClick={clearFilters}
+          >
+            Clear
+          </button>
+        ) : null}
+      </div>
+
+      <ul className="mt-2 divide-y divide-slate-800">
         {matches.map((exercise: Exercise) => (
           <li key={exercise.id}>
-            <button
-              type="button"
-              className="w-full py-3 text-left"
-              onClick={() => setSelected(selected === exercise.id ? null : exercise.id)}
-            >
-              <span className="flex justify-between">
-                <span className="font-medium">{exercise.name}</span>
-                <span className="text-xs tabular-nums text-slate-500">
-                  {trainedCount.get(exercise.id) ?? 0} sets
+            <div className="flex items-center">
+              <button
+                type="button"
+                className="min-h-11 flex-1 py-3 text-left"
+                onClick={() => setSelected(selected === exercise.id ? null : exercise.id)}
+              >
+                <span className="flex justify-between">
+                  <span className="font-medium">{exercise.name}</span>
+                  <span className="text-xs tabular-nums text-slate-500">
+                    {trainedCount.get(exercise.id) ?? 0} sets
+                  </span>
                 </span>
-              </span>
-              <span className="block text-xs text-slate-500">
-                {exercise.equipment} · {exercise.muscleGroups.join(', ')}
-              </span>
-            </button>
+                <span className="block text-xs text-slate-500">
+                  {exercise.equipment} · {exercise.muscleGroups.join(', ')}
+                </span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={!!exercise.isFavourite}
+                aria-label={exercise.isFavourite ? 'Remove from favourites' : 'Add to favourites'}
+                className="flex min-h-11 min-w-11 shrink-0 items-center justify-center text-xl"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  void save(
+                    setExerciseFavourite(exercise.id, !exercise.isFavourite),
+                    'updating favourites',
+                  )
+                }}
+              >
+                <span className={exercise.isFavourite ? 'text-sky-400' : 'text-slate-600'}>
+                  {exercise.isFavourite ? '★' : '☆'}
+                </span>
+              </button>
+            </div>
 
             {selected === exercise.id ? (
               <div className="pb-3 text-sm">
@@ -103,6 +210,11 @@ export default function ExercisesScreen() {
             ) : null}
           </li>
         ))}
+        {matches.length === 0 ? (
+          <li className="px-1 py-8 text-center text-sm text-slate-500">
+            No exercises match your filters.
+          </li>
+        ) : null}
       </ul>
     </div>
   )
