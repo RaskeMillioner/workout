@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { RoutineBlock, SetEntry } from '../db/schema'
 import {
+  bestRepsByWeight,
   bestSetByEstimated1RM,
+  bestSetByVolume,
   detectPRs,
   estimate1RM,
   isPR,
@@ -124,6 +126,87 @@ describe('bestSetByEstimated1RM', () => {
   it('returns undefined when nothing qualifies', () => {
     expect(bestSetByEstimated1RM([])).toBeUndefined()
     expect(bestSetByEstimated1RM([set({ kind: 'warmup' })])).toBeUndefined()
+  })
+})
+
+describe('bestSetByVolume', () => {
+  it('picks the highest reps * weight, not the heaviest weight', () => {
+    const highVolume = set({ weightKg: 24, reps: 30 }) // 720
+    const heavyLowVolume = set({ weightKg: 40, reps: 10 }) // 400
+    expect(bestSetByVolume([heavyLowVolume, highVolume])).toBe(highVolume)
+  })
+
+  it('excludes warmups and incomplete sets', () => {
+    const working = set({ weightKg: 24, reps: 20 })
+    expect(
+      bestSetByVolume([
+        set({ kind: 'warmup', weightKg: 100, reps: 30 }),
+        set({ weightKg: 100, reps: 30, completed: false }),
+        working,
+      ]),
+    ).toBe(working)
+  })
+
+  it('keeps the earlier set on a tie in volume', () => {
+    const first = set({ weightKg: 24, reps: 30 })
+    const tie = set({ weightKg: 30, reps: 24 })
+    expect(bestSetByVolume([first, tie])).toBe(first)
+  })
+
+  it('returns undefined for empty input and for all-warmup input', () => {
+    expect(bestSetByVolume([])).toBeUndefined()
+    expect(bestSetByVolume([set({ kind: 'warmup' })])).toBeUndefined()
+  })
+})
+
+describe('bestRepsByWeight', () => {
+  it('maps each distinct load to its highest-rep set', () => {
+    const twentyFour30 = set({ weightKg: 24, reps: 30 })
+    const twentyFour25 = set({ weightKg: 24, reps: 25 })
+    const twentyEight20 = set({ weightKg: 28, reps: 20 })
+    const map = bestRepsByWeight([twentyFour30, twentyFour25, twentyEight20])
+    expect(map.get(24)).toBe(twentyFour30)
+    expect(map.get(28)).toBe(twentyEight20)
+    expect(map.size).toBe(2)
+  })
+
+  it('excludes warmups and incomplete sets', () => {
+    const working = set({ weightKg: 24, reps: 20 })
+    const map = bestRepsByWeight([
+      set({ kind: 'warmup', weightKg: 24, reps: 40 }),
+      set({ weightKg: 24, reps: 40, completed: false }),
+      working,
+    ])
+    expect(map.get(24)).toBe(working)
+    expect(map.size).toBe(1)
+  })
+
+  it('keeps the earlier set on a tie in reps at the same load', () => {
+    const first = set({ weightKg: 24, reps: 20 })
+    const tie = set({ weightKg: 24, reps: 20 })
+    expect(bestRepsByWeight([first, tie]).get(24)).toBe(first)
+  })
+
+  it('returns an empty map for empty input', () => {
+    expect(bestRepsByWeight([]).size).toBe(0)
+  })
+
+  it('a swings-only high-rep history yields volume and reps-by-weight records while the 1RM stays undefined', () => {
+    const history = [
+      set({ weightKg: 24, reps: 30 }),
+      set({ weightKg: 24, reps: 25 }),
+      set({ weightKg: 28, reps: 20 }),
+    ]
+    expect(bestSetByVolume(history)).toBe(history[0])
+    const map = bestRepsByWeight(history)
+    expect(map.get(24)).toBe(history[0])
+    expect(map.get(28)).toBe(history[2])
+    expect(bestSetByEstimated1RM(history)).toBeUndefined()
+  })
+
+  it('a normal low-rep history still produces an estimated 1RM exactly as before', () => {
+    const history = [set({ weightKg: 100, reps: 5 }), set({ weightKg: 120, reps: 2 })]
+    expect(bestSetByEstimated1RM(history)).toBe(history[1])
   })
 })
 

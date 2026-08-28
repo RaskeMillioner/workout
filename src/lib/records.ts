@@ -85,6 +85,49 @@ export function detectPRs(entries: SetEntry[]): {
 }
 
 /**
+ * The set with the highest tonnage (`reps * weightKg`) — the single biggest
+ * chunk of work ever moved in one set. Unlike the estimated 1RM, this is
+ * meaningful at any rep count: a 24 kg x 30 kettlebell swing is real,
+ * comparable work even though nobody would try to turn it into a one-rep max.
+ * Warmups and unchecked sets are ignored; a tie keeps the earlier set,
+ * matching `detectPRs`.
+ */
+export function bestSetByVolume(entries: SetEntry[]): SetEntry | undefined {
+  let best: SetEntry | undefined
+  let bestVolume = -Infinity
+  for (const entry of entries) {
+    if (!isWorkingSet(entry) || entry.reps <= 0 || entry.weightKg <= 0) continue
+    const volume = entry.reps * entry.weightKg
+    if (volume > bestVolume) {
+      best = entry
+      bestVolume = volume
+    }
+  }
+  return best
+}
+
+/**
+ * The inverse of `bestByReps` (in `detectPRs`): instead of the heaviest set
+ * at each rep count, this is the most reps managed at each distinct load.
+ * Fixed-jump equipment — kettlebells come in 16/20/24/28/32 kg, not arbitrary
+ * plates — can't be microloaded, so "one more rep at the same bell" is the
+ * progression that actually happens between weight jumps, and this is the
+ * table that shows it. Warmups and unchecked sets are ignored; a tie keeps
+ * the earlier set, because matching a rep count is not beating it.
+ */
+export function bestRepsByWeight(entries: SetEntry[]): Map<number, SetEntry> {
+  const bestByWeight = new Map<number, SetEntry>()
+  for (const entry of entries) {
+    if (!isWorkingSet(entry) || entry.reps <= 0 || entry.weightKg <= 0) continue
+    const incumbent = bestByWeight.get(entry.weightKg)
+    if (!incumbent || entry.reps > incumbent.reps) {
+      bestByWeight.set(entry.weightKg, entry)
+    }
+  }
+  return bestByWeight
+}
+
+/**
  * Is `candidate` a personal record at its own rep count? Strictly greater than
  * everything in `history` — equalling a previous best is not a PR. An unchecked
  * or warmup candidate is never a PR.
