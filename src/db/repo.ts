@@ -174,6 +174,10 @@ export async function addCustomExercise(
   return id
 }
 
+export async function setExerciseFavourite(id: string, isFavourite: boolean): Promise<void> {
+  await db.exercises.update(id, { isFavourite, updatedAt: now() })
+}
+
 export async function createRoutine(name: string, blocks: RoutineBlock[] = []): Promise<string> {
   const id = newId()
   await db.routines.add({ id, name, blocks, updatedAt: now() })

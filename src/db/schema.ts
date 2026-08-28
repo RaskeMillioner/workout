@@ -59,6 +59,10 @@ export interface Exercise {
   equipment: string
   isCustom: boolean
   notes?: string
+  /** Starred by the user for quick access. Optional and unindexed — filtering
+   *  happens in memory over the (small) exercise catalogue, so no index or
+   *  version bump is needed for this field. */
+  isFavourite?: boolean
   updatedAt: number
 }
 
@@ -151,6 +155,10 @@ export interface Settings {
   lastExportAt?: number
   /** The program currently being followed, if any. Drives which routine comes next. */
   activeProgramId?: string
+  /** Highest seed catalogue version (see `SEED_CATALOGUE_VERSION` in
+   *  `src/db/seed.ts`) this install has received. Optional and unindexed —
+   *  no version bump needed, same as `isFavourite` above. */
+  seedVersion?: number
   updatedAt: number
 }
 

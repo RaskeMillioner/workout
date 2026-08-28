@@ -133,6 +133,7 @@ const ROW_VALIDATORS: Record<TableName, RowValidator> = {
       }
     }
     optional(row, 'notes', () => requireString(row, table, index, 'notes'))
+    optional(row, 'isFavourite', () => requireBoolean(row, table, index, 'isFavourite'))
   },
 
   sessions: (row, table, index) => {
@@ -227,6 +228,7 @@ const ROW_VALIDATORS: Record<TableName, RowValidator> = {
     requireNumber(row, table, index, 'defaultRestSec')
     requireEnum(row, table, index, 'theme', ['dark', 'light', 'system'])
     optional(row, 'lastExportAt', () => requireNumber(row, table, index, 'lastExportAt'))
+    optional(row, 'seedVersion', () => requireNumber(row, table, index, 'seedVersion'))
   },
 
   programs: (row, table, index) => {

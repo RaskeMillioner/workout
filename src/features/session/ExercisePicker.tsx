@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import type { Exercise, Modality } from '../../db/schema'
 import { db } from '../../db/schema'
 import Button from '../../components/Button'
+import Chip from '../../components/Chip'
 
 type Props = {
   onPick: (exercise: Exercise) => void
@@ -24,7 +25,7 @@ export default function ExercisePicker({ onPick, onClose }: Props) {
   const matches = useMemo(() => {
     if (!exercises) return []
     const needle = query.trim().toLowerCase()
-    return exercises.filter((ex) => {
+    const filtered = exercises.filter((ex) => {
       if (modality !== 'all' && ex.modality !== modality) return false
       if (!needle) return true
       return (
@@ -33,6 +34,11 @@ export default function ExercisePicker({ onPick, onClose }: Props) {
         ex.muscleGroups.some((group) => group.includes(needle))
       )
     })
+    // Favourites first (stable sort keeps the existing alphabetical order —
+    // db.exercises.orderBy('name') — within each group).
+    return [...filtered].sort(
+      (a, b) => Number(!!b.isFavourite) - Number(!!a.isFavourite),
+    )
   }, [exercises, query, modality])
 
   return (
@@ -52,18 +58,12 @@ export default function ExercisePicker({ onPick, onClose }: Props) {
 
       <div className="flex gap-2 overflow-x-auto border-b border-slate-800 px-3 py-2">
         {FILTERS.map((filter) => (
-          <button
+          <Chip
             key={filter.value}
-            type="button"
+            label={filter.label}
+            active={modality === filter.value}
             onClick={() => setModality(filter.value)}
-            className={`min-h-9 shrink-0 rounded-full px-3 text-xs font-medium ${
-              modality === filter.value
-                ? 'bg-sky-500 text-slate-950'
-                : 'border border-slate-700 text-slate-300'
-            }`}
-          >
-            {filter.label}
-          </button>
+          />
         ))}
       </div>
 
@@ -75,7 +75,15 @@ export default function ExercisePicker({ onPick, onClose }: Props) {
               className="w-full px-4 py-3 text-left active:bg-slate-900"
               onClick={() => onPick(exercise)}
             >
-              <span className="block font-medium">{exercise.name}</span>
+              <span className="block font-medium">
+                {exercise.isFavourite ? (
+                  <span className="mr-1 text-sky-400" aria-hidden="true">
+                    ★
+                  </span>
+                ) : null}
+                {exercise.name}
+                {exercise.isFavourite ? <span className="sr-only"> (favourite)</span> : null}
+              </span>
               <span className="block text-xs text-slate-500">
                 {exercise.equipment} · {exercise.muscleGroups.slice(0, 3).join(', ')}
               </span>
