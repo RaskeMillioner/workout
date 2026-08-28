@@ -3,7 +3,13 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import type { Exercise, MuscleGroup, SetEntry } from '../../db/schema'
 import { db, MUSCLE_GROUPS } from '../../db/schema'
 import { setExerciseFavourite } from '../../db/repo'
-import { bestSetByEstimated1RM, detectPRs, estimate1RM } from '../../lib/records'
+import {
+  bestRepsByWeight,
+  bestSetByEstimated1RM,
+  bestSetByVolume,
+  detectPRs,
+  estimate1RM,
+} from '../../lib/records'
 import { formatWeight } from '../../lib/units'
 import { useSettings } from '../../app/SettingsProvider'
 import { useWrite } from '../../app/WriteErrorBoundary'
@@ -67,6 +73,8 @@ export default function ExercisesScreen() {
   const detailSets = selected ? allSets.filter((s) => s.exerciseId === selected) : []
   const prs = detail ? detectPRs(detailSets) : null
   const best = detail ? bestSetByEstimated1RM(detailSets) : undefined
+  const bestVolumeSet = detail ? bestSetByVolume(detailSets) : undefined
+  const repsByWeight = detail ? bestRepsByWeight(detailSets) : undefined
 
   return (
     <div className="mx-auto max-w-lg p-4">
@@ -180,6 +188,23 @@ export default function ExercisesScreen() {
                   <p className="text-slate-500">Never logged.</p>
                 ) : (
                   <>
+                    {bestVolumeSet ? (
+                      <p className="text-slate-400">
+                        Best set:{' '}
+                        <span className="font-semibold text-sky-400 tabular-nums">
+                          {formatWeight(bestVolumeSet.weightKg, settings.weightUnit)} ×{' '}
+                          {bestVolumeSet.reps}
+                        </span>{' '}
+                        <span className="text-xs text-slate-600">
+                          (
+                          {formatWeight(
+                            bestVolumeSet.weightKg * bestVolumeSet.reps,
+                            settings.weightUnit,
+                          )}
+                          )
+                        </span>
+                      </p>
+                    ) : null}
                     {best ? (
                       <p className="text-slate-400">
                         Best est. 1RM:{' '}
@@ -192,6 +217,19 @@ export default function ExercisesScreen() {
                         <span className="text-xs text-slate-600">
                           (from {Number(best.weightKg.toFixed(1))}×{best.reps})
                         </span>
+                      </p>
+                    ) : null}
+                    {repsByWeight && repsByWeight.size > 0 ? (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Reps by load:{' '}
+                        {[...repsByWeight.entries()]
+                          .sort((a, b) => b[0] - a[0])
+                          .slice(0, 5)
+                          .map(
+                            ([weightKg, entry]) =>
+                              `${formatWeight(weightKg, settings.weightUnit)} × ${entry.reps}`,
+                          )
+                          .join(' · ')}
                       </p>
                     ) : null}
                     {prs && prs.bestByReps.size > 0 ? (
